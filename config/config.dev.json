@@ -1,0 +1,9 @@
+{
+  "db": {
+    "user": "root",
+    "pass": "root",
+    "server": "localhost:3318",
+    "dbName": "rss_aggregator"
+  },
+  "solr": "http://localhost:8983/solr/rss"
+}
