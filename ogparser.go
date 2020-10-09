@@ -112,7 +112,7 @@ func updateSolr(solrBaseUrl string, scraped PostScraped) {
 }
 
 func updateDbWithOgTags(db *sql.DB, scraped PostScraped) {
-	stmt, err := db.Prepare("UPDATE posts SET description = ?, image = ?, modified = ? WHERE pk_post_id = ?")
+	stmt, err := db.Prepare("UPDATE posts SET description = ?, image = ?, modified = ?, content = ? WHERE pk_post_id = ?")
 	if err != nil {
 		fmt.Println(
 			"Could not prepare SQL statement to update post with og values", scraped.Post.Url, err.Error(),
@@ -123,6 +123,7 @@ func updateDbWithOgTags(db *sql.DB, scraped PostScraped) {
 		scraped.OpenGraphTags.Description,
 		scraped.OpenGraphTags.FeaturedImage,
 		time.Now().UTC().Format("2006-01-02 15:04:05"),
+		scraped.Html,
 		scraped.Post.PostID,
 	)
 	if err != nil {
