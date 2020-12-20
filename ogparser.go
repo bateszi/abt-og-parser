@@ -156,10 +156,11 @@ func getOgTagsFromHtml(scrapedPost *PostScraped) {
 			for i := range token.Attr {
 				if token.Attr[i].Key == "property" && token.Attr[i].Val == "og:description" {
 					isDescr = true
+					break
 				} else if token.Attr[i].Key == "property" && token.Attr[i].Val == "og:image" {
 					isThumb = true
+					break
 				}
-				break
 			}
 
 			for j := range token.Attr {
