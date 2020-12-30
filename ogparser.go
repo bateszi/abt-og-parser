@@ -49,7 +49,6 @@ type AbtSolrDocs []AbtSolrDocument
 type AbtSolrDocument struct {
 	Id int64 `json:"id"`
 	PostDescription SolrSetDocument `json:"post_description"`
-	PostImage SolrSetDocument `json:"post_image"`
 }
 
 type SolrSetDocument struct {
@@ -69,9 +68,6 @@ func updateSolr(solrBaseUrl string, scraped PostScraped) {
 			Id: scraped.Post.PostID,
 			PostDescription: SolrSetDocument{
 				Set: scraped.OpenGraphTags.Description,
-			},
-			PostImage: SolrSetDocument{
-				Set: scraped.OpenGraphTags.FeaturedImage,
 			},
 		},
 	}
@@ -112,7 +108,7 @@ func updateSolr(solrBaseUrl string, scraped PostScraped) {
 }
 
 func updateDbWithOgTags(db *sql.DB, scraped PostScraped) {
-	stmt, err := db.Prepare("UPDATE posts SET description = ?, image = ?, modified = ?, content = ? WHERE pk_post_id = ?")
+	stmt, err := db.Prepare("UPDATE posts SET description = ?, modified = ?, content = ? WHERE pk_post_id = ?")
 	if err != nil {
 		fmt.Println(
 			"Could not prepare SQL statement to update post with og values", scraped.Post.Url, err.Error(),
@@ -121,7 +117,6 @@ func updateDbWithOgTags(db *sql.DB, scraped PostScraped) {
 	}
 	_, err = stmt.Exec(
 		scraped.OpenGraphTags.Description,
-		scraped.OpenGraphTags.FeaturedImage,
 		time.Now().UTC().Format("2006-01-02 15:04:05"),
 		scraped.Html,
 		scraped.Post.PostID,
@@ -131,6 +126,32 @@ func updateDbWithOgTags(db *sql.DB, scraped PostScraped) {
 			"Could not execute SQL statement to update post with og values", scraped.Post.Url, err.Error(),
 		)
 		return
+	}
+
+	var ttlFiles float64
+	err = db.QueryRow("SELECT COUNT(*) AS ttl FROM files WHERE fk_post_id = ?", scraped.Post.PostID).Scan(&ttlFiles)
+	if err != nil && err.Error() != "sql: no rows in result set" {
+		fmt.Println("could not count files", err.Error())
+		return
+	}
+	if ttlFiles == 0 {
+		stmt, err = db.Prepare("INSERT INTO `files` (`fk_post_id`, `external_url`) VALUES (?, ?)")
+		if err != nil {
+			fmt.Println(
+				"Could not prepare SQL statement to insert post image", scraped.Post.Url, err.Error(),
+			)
+			return
+		}
+		_, err = stmt.Exec(
+			scraped.Post.PostID,
+			scraped.OpenGraphTags.FeaturedImage,
+		)
+		if err != nil {
+			fmt.Println(
+				"Could not execute SQL statement to insert post image", scraped.Post.Url, err.Error(),
+			)
+			return
+		}
 	}
 }
 
