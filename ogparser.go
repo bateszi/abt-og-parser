@@ -31,6 +31,7 @@ type DbConfig struct {
 type Post struct {
 	PostID int64
 	Url string
+	OrigDescription string
 }
 
 type PostScraped struct {
@@ -115,8 +116,14 @@ func updateDbWithOgTags(db *sql.DB, scraped PostScraped) {
 		)
 		return
 	}
+
+	description := scraped.OpenGraphTags.Description
+	if description == "" {
+		description = scraped.Post.OrigDescription
+	}
+
 	_, err = stmt.Exec(
-		scraped.OpenGraphTags.Description,
+		description,
 		time.Now().UTC().Format("2006-01-02 15:04:05"),
 		scraped.Html,
 		scraped.Post.PostID,
@@ -128,29 +135,31 @@ func updateDbWithOgTags(db *sql.DB, scraped PostScraped) {
 		return
 	}
 
-	var ttlFiles float64
-	err = db.QueryRow("SELECT COUNT(*) AS ttl FROM files WHERE fk_post_id = ?", scraped.Post.PostID).Scan(&ttlFiles)
-	if err != nil && err.Error() != "sql: no rows in result set" {
-		fmt.Println("could not count files", err.Error())
-		return
-	}
-	if ttlFiles == 0 {
-		stmt, err = db.Prepare("INSERT INTO `files` (`fk_post_id`, `external_url`) VALUES (?, ?)")
-		if err != nil {
-			fmt.Println(
-				"Could not prepare SQL statement to insert post image", scraped.Post.Url, err.Error(),
-			)
+	if scraped.OpenGraphTags.FeaturedImage != "" {
+		var ttlFiles float64
+		err = db.QueryRow("SELECT COUNT(*) AS ttl FROM files WHERE fk_post_id = ?", scraped.Post.PostID).Scan(&ttlFiles)
+		if err != nil && err.Error() != "sql: no rows in result set" {
+			fmt.Println("could not count files", err.Error())
 			return
 		}
-		_, err = stmt.Exec(
-			scraped.Post.PostID,
-			scraped.OpenGraphTags.FeaturedImage,
-		)
-		if err != nil {
-			fmt.Println(
-				"Could not execute SQL statement to insert post image", scraped.Post.Url, err.Error(),
+		if ttlFiles == 0 {
+			stmt, err = db.Prepare("INSERT INTO `files` (`fk_post_id`, `external_url`) VALUES (?, ?)")
+			if err != nil {
+				fmt.Println(
+					"Could not prepare SQL statement to insert post image", scraped.Post.Url, err.Error(),
+				)
+				return
+			}
+			_, err = stmt.Exec(
+				scraped.Post.PostID,
+				scraped.OpenGraphTags.FeaturedImage,
 			)
-			return
+			if err != nil {
+				fmt.Println(
+					"Could not execute SQL statement to insert post image", scraped.Post.Url, err.Error(),
+				)
+				return
+			}
 		}
 	}
 }
@@ -258,7 +267,7 @@ func getPostsToScrape(db *sql.DB) ([]Post, error) {
 	posts := make([]Post, 0)
 
 	getPostsRows, err := db.Query(
-		"SELECT pk_post_id, link FROM rss_aggregator.posts WHERE created > (NOW() - interval 60 minute)",
+		"SELECT pk_post_id, link, description FROM rss_aggregator.posts WHERE created > (NOW() - interval 60 minute)",
 	)
 	if err != nil {
 		return posts, err
@@ -276,6 +285,7 @@ func getPostsToScrape(db *sql.DB) ([]Post, error) {
 		err = getPostsRows.Scan(
 			&post.PostID,
 			&post.Url,
+			&post.OrigDescription,
 		)
 		if err != nil {
 			return posts, err
@@ -365,10 +375,13 @@ func start() {
 
 		getOgTagsFromHtml(&scrapedPost)
 
-		if scrapedPost.OpenGraphTags.FeaturedImage != "" && scrapedPost.OpenGraphTags.Description != "" {
+		if scrapedPost.OpenGraphTags.FeaturedImage != "" || scrapedPost.OpenGraphTags.Description != "" {
 			fmt.Println("updating OG tags parsed from", scrapedPost.Post.Url)
 			updateDbWithOgTags(db, scrapedPost)
-			updateSolr(config.Solr, scrapedPost)
+
+			if scrapedPost.OpenGraphTags.Description != "" {
+				updateSolr(config.Solr, scrapedPost)
+			}
 		}
 	}
 }
